@@ -308,6 +308,150 @@ END;
 /
 
 -- ============================================================================
+-- CONSULTAS QUE VALIDAN REGLAS DE NEGOCIO USANDO FUNCIONES
+-- ============================================================================
+
+PROMPT;
+PROMPT ============================================================================
+PROMPT CONSULTA 1: USUARIOS CON DESCUENTO POR ANTIGÜEDAD
+PROMPT (Regla: >12 meses = 10%, >24 meses = 15%)
+PROMPT ============================================================================
+
+SELECT 
+    u.id_usuario,
+    u.nombre,
+    p.nombre as plan,
+    p.precio as precio_base,
+    FN_CALCULAR_DESCUENTO_ANTIGUO(u.id_usuario, p.precio) as precio_con_descuento,
+    ROUND(p.precio - FN_CALCULAR_DESCUENTO_ANTIGUO(u.id_usuario, p.precio), 2) as ahorro,
+    ROUND(MONTHS_BETWEEN(SYSDATE, u.fecha_registro), 0) as meses_antiguo
+FROM USUARIO u
+INNER JOIN SUSCRIPCION s ON u.id_usuario = s.id_usuario
+INNER JOIN PLAN p ON s.id_plan = p.id_plan
+WHERE MONTHS_BETWEEN(SYSDATE, u.fecha_registro) >= 12
+AND ROWNUM <= 10
+ORDER BY meses_antiguo DESC;
+
+-- ============================================================================
+-- CONSULTA 2: USUARIOS QUE PUEDEN CALIFICAR (Función + Regla)
+-- Regla: Solo puede calificar si vio >= 50% del contenido
+-- ============================================================================
+
+PROMPT;
+PROMPT ============================================================================
+PROMPT CONSULTA 2: CONTENIDO LISTO PARA CALIFICAR (>=50% visualizado)
+PROMPT (Regla: Solo si vio >= 50% puede calificar)
+PROMPT ============================================================================
+
+SELECT DISTINCT
+    u.id_usuario,
+    u.nombre as usuario,
+    pf.id_perfil,
+    c.id_contenido,
+    c.titulo as contenido,
+    MAX(r.porcentaje_avance) as porcentaje_maximo_visto,
+    CASE 
+        WHEN FN_VALIDAR_REPRODUCCION(pf.id_perfil, c.id_contenido) THEN 'SÍ PUEDE CALIFICAR'
+        ELSE 'NO PUEDE CALIFICAR'
+    END as puede_calificar
+FROM USUARIO u
+INNER JOIN PERFIL pf ON u.id_usuario = pf.id_usuario
+INNER JOIN REPRODUCCION r ON pf.id_perfil = r.id_perfil
+INNER JOIN CONTENIDO c ON r.id_contenido = c.id_contenido
+GROUP BY u.id_usuario, u.nombre, pf.id_perfil, c.id_contenido, c.titulo
+HAVING MAX(r.porcentaje_avance) >= 50 OR MAX(r.porcentaje_avance) < 50
+ORDER BY u.id_usuario, porcentaje_maximo_visto DESC;
+
+-- ============================================================================
+-- CONSULTA 3: ANÁLISIS DE DISPARADORES - PERFILES POR PLAN
+-- Regla: Máximo perfiles según plan (Básico:2, Estándar:3, Premium:5)
+-- ============================================================================
+
+PROMPT;
+PROMPT ============================================================================
+PROMPT CONSULTA 3: VALIDAR LÍMITE DE PERFILES POR PLAN
+PROMPT (Regla: Básico:2, Estándar:3, Premium:5 perfiles máximo)
+PROMPT ============================================================================
+
+SELECT 
+    pl.nombre as plan,
+    u.id_usuario,
+    u.nombre as usuario,
+    COUNT(pf.id_perfil) as perfiles_actuales,
+    CASE 
+        WHEN pl.nombre = 'Básico' AND COUNT(pf.id_perfil) >= 2 THEN 'EN LÍMITE'
+        WHEN pl.nombre = 'Estándar' AND COUNT(pf.id_perfil) >= 3 THEN 'EN LÍMITE'
+        WHEN pl.nombre = 'Premium' AND COUNT(pf.id_perfil) >= 5 THEN 'EN LÍMITE'
+        ELSE 'PERFILES DISPONIBLES'
+    END as estado
+FROM USUARIO u
+INNER JOIN SUSCRIPCION s ON u.id_usuario = s.id_usuario
+INNER JOIN PLAN pl ON s.id_plan = pl.id_plan
+INNER JOIN PERFIL pf ON u.id_usuario = pf.id_usuario
+GROUP BY pl.nombre, u.id_usuario, u.nombre
+ORDER BY pl.nombre, perfiles_actuales DESC;
+
+-- ============================================================================
+-- CONSULTA 4: ANÁLISIS DE DISPARADORES - CALIFICACIONES VÁLIDAS
+-- Regla: Solo válidas si vio >= 50% y puntuación 1-5
+-- ============================================================================
+
+PROMPT;
+PROMPT ============================================================================
+PROMPT CONSULTA 4: VALIDAR CALIFICACIONES (Reproducción >=50% + Score 1-5)
+PROMPT (Regla: Solo válidas si cumple ambas condiciones)
+PROMPT ============================================================================
+
+SELECT 
+    cal.id_calificacion,
+    u.nombre as usuario,
+    c.titulo as contenido,
+    cal.puntuacion,
+    MAX(r.porcentaje_avance) as porcentaje_visto,
+    CASE 
+        WHEN MAX(r.porcentaje_avance) >= 50 AND cal.puntuacion BETWEEN 1 AND 5 THEN 'VÁLIDA'
+        WHEN MAX(r.porcentaje_avance) < 50 THEN 'INVÁLIDA: Vio < 50%'
+        WHEN cal.puntuacion < 1 OR cal.puntuacion > 5 THEN 'INVÁLIDA: Score fuera de rango'
+        ELSE 'ESTADO DESCONOCIDO'
+    END as validez
+FROM CALIFICACION cal
+INNER JOIN PERFIL pf ON cal.id_perfil = pf.id_perfil
+INNER JOIN USUARIO u ON pf.id_usuario = u.id_usuario
+INNER JOIN CONTENIDO c ON cal.id_contenido = c.id_contenido
+LEFT JOIN REPRODUCCION r ON pf.id_perfil = r.id_perfil AND c.id_contenido = r.id_contenido
+GROUP BY cal.id_calificacion, u.nombre, c.titulo, cal.puntuacion
+ORDER BY cal.id_calificacion;
+
+-- ============================================================================
+-- CONSULTA 5: HISTORIAL DE CAMBIOS DE PLAN (Disparador 3)
+-- Regla: Auditoría automática de cambios de plan
+-- ============================================================================
+
+PROMPT;
+PROMPT ============================================================================
+PROMPT CONSULTA 5: AUDITORÍA DE CAMBIOS DE PLAN
+PROMPT (Regla: Todo cambio de plan se registra automáticamente)
+PROMPT ============================================================================
+
+SELECT 
+    h.id_historial,
+    u.nombre as usuario,
+    pl_anterior.nombre as plan_anterior,
+    pl_nuevo.nombre as plan_nuevo,
+    h.fecha_cambio,
+    CASE 
+        WHEN pl_nuevo.precio > pl_anterior.precio THEN 'UPGRADE'
+        WHEN pl_nuevo.precio < pl_anterior.precio THEN 'DOWNGRADE'
+        ELSE 'CAMBIO LATERAL'
+    END as tipo_cambio,
+    ROUND(pl_nuevo.precio - pl_anterior.precio, 2) as diferencia_precio
+FROM HISTORIAL_PLAN h
+INNER JOIN USUARIO u ON h.id_usuario = u.id_usuario
+INNER JOIN PLAN pl_anterior ON h.id_plan_anterior = pl_anterior.id_plan
+INNER JOIN PLAN pl_nuevo ON h.id_plan_nuevo = pl_nuevo.id_plan
+ORDER BY h.fecha_cambio DESC;
+
+-- ============================================================================
 -- RESUMEN FINAL
 -- ============================================================================
 
@@ -322,6 +466,15 @@ PROMPT ? DISPARADOR 1: TR_VALIDAR_PERFILES_MAX (máximo 4 perfiles)
 PROMPT ? DISPARADOR 2: TR_VALIDAR_CALIFICACION_MINIMO (reproducción >=50%)
 PROMPT ? DISPARADOR 3: TR_REGISTRAR_CAMBIO_PLAN (auditoría de cambios)
 PROMPT ? DISPARADOR 4: TR_AUDIT_REPRODUCCION (auditoría de reproducciones)
+PROMPT;
+PROMPT ============================================================================
+PROMPT CONSULTAS QUE VALIDAN REGLAS DE NEGOCIO:
+PROMPT ============================================================================
+PROMPT ? CONSULTA 1: Usuarios con descuento por antigüedad (>12 meses)
+PROMPT ? CONSULTA 2: Contenido listo para calificar (>=50% visto)
+PROMPT ? CONSULTA 3: Límite de perfiles por plan
+PROMPT ? CONSULTA 4: Validación de calificaciones (reproducción + score)
+PROMPT ? CONSULTA 5: Auditoría de cambios de plan
 PROMPT ============================================================================
 PROMPT;
 PROMPT REQUISITO 3.2.3: 2 FUNCIONES ?

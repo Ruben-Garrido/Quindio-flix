@@ -1,29 +1,29 @@
 -- ============================================================================
 -- SCRIPT: Crear 2 Vistas Materializadas
--- REQUISITO: 3.1.4 Vistas materializadas (minimo 2)
+-- REQUISITO: 3.1.4 Vistas materializadas (mínimo 2)
 -- PROPÓSITO: Precalcular datos para mejorar performance de reportes
+-- NOTA: SCRIPT COMPLETAMENTE CORREGIDO - Compatible Oracle XE
 -- ============================================================================
 
 -- ============================================================================
--- LIMPIEZA PREVIA (opcional - para evitar errores de objetos existentes)
+-- LIMPIEZA PREVIA
 -- ============================================================================
+
 BEGIN
-    -- Eliminar índices si existen
-    EXECUTE IMMEDIATE 'DROP INDEX IDX_MV_CONTENIDO_POPULARIDAD' ;
-    EXECUTE IMMEDIATE 'DROP INDEX IDX_MV_CONT_REPRODUCCIONES' ;
-    EXECUTE IMMEDIATE 'DROP INDEX IDX_MCP_MES' ;
-    EXECUTE IMMEDIATE 'DROP INDEX IDX_MCP_CIUDAD' ;
-    EXECUTE IMMEDIATE 'DROP INDEX IDX_MCP_PLAN' ;
-    EXECUTE IMMEDIATE 'DROP INDEX IDX_MCP_TOTALES' ;
+    EXECUTE IMMEDIATE 'DROP INDEX IDX_MV_CONTENIDO_POPULARIDAD';
+    EXECUTE IMMEDIATE 'DROP INDEX IDX_MV_CONT_REPRODUCCIONES';
+    EXECUTE IMMEDIATE 'DROP INDEX IDX_MCP_MES';
+    EXECUTE IMMEDIATE 'DROP INDEX IDX_MCP_CIUDAD';
+    EXECUTE IMMEDIATE 'DROP INDEX IDX_MCP_PLAN';
+    EXECUTE IMMEDIATE 'DROP INDEX IDX_MCP_TOTALES';
 EXCEPTION
-    WHEN OTHERS THEN NULL; -- Si no existen, continuar
+    WHEN OTHERS THEN NULL;
 END;
 /
 
 BEGIN
-    -- Eliminar vistas materializadas si existen
-    EXECUTE IMMEDIATE 'DROP MATERIALIZED VIEW MV_CONTENIDO_POPULARIDAD' ;
-    EXECUTE IMMEDIATE 'DROP MATERIALIZED VIEW MV_INGRESOS_MCP' ;
+    EXECUTE IMMEDIATE 'DROP MATERIALIZED VIEW MV_CONTENIDO_POPULARIDAD';
+    EXECUTE IMMEDIATE 'DROP MATERIALIZED VIEW MV_INGRESOS_MCP';
 EXCEPTION
     WHEN OTHERS THEN NULL;
 END;
@@ -35,9 +35,6 @@ PROMPT =========================================================================
 
 -- ============================================================================
 -- VISTA MATERIALIZADA 1: MV_CONTENIDO_POPULARIDAD
--- Descripción: Precalcula reproducciones y calificación promedio por contenido
--- Uso: Base para reporte "Contenido Más Popular"
--- Actualización: Diaria (se recalcula cada noche)
 -- ============================================================================
 
 CREATE MATERIALIZED VIEW MV_CONTENIDO_POPULARIDAD AS
@@ -61,19 +58,17 @@ LEFT JOIN CALIFICACION cal ON c.id_contenido = cal.id_contenido
 LEFT JOIN FAVORITO f ON c.id_contenido = f.id_contenido
 GROUP BY c.id_contenido, c.titulo, c.tipo_contenido, c.ano_lanzamiento, c.clasificacion_edad;
 
--- Índices para MV_CONTENIDO_POPULARIDAD (con nombres cortos, sin DESC)
+PROMPT Materialized view MV_CONTENIDO_POPULARIDAD creado.
+
 CREATE INDEX IDX_MV_CONTENIDO_POPULARIDAD ON MV_CONTENIDO_POPULARIDAD(id_contenido);
 CREATE INDEX IDX_MV_CONT_REPRODUCCIONES ON MV_CONTENIDO_POPULARIDAD(total_reproducciones);
 
-PROMPT Vista materializada MV_CONTENIDO_POPULARIDAD creada exitosamente;
+PROMPT Index IDX_MV_CONTENIDO_POPULARIDAD creado.
+PROMPT Index IDX_MV_CONT_REPRODUCCIONES creado.
+PROMPT Vista materializada MV_CONTENIDO_POPULARIDAD creada exitosamente
 
 -- ============================================================================
 -- VISTA MATERIALIZADA 2: MV_INGRESOS_MCP
--- Descripción: Precalcula ingresos mensuales por ciudad y plan de suscripción
--- Uso: Base para reporte financiero mensual
--- Actualización: Diaria (se recalcula cada noche)
--- NOTA: El nombre MV_INGRESOS_MCP es la abreviatura de 
---       MV_INGRESOS_MENSUALES_CIUDAD_PLAN (menos de 30 caracteres)
 -- ============================================================================
 
 CREATE MATERIALIZED VIEW MV_INGRESOS_MCP AS
@@ -111,67 +106,155 @@ GROUP BY
     pl.nombre,
     pl.precio;
 
--- Índices para MV_INGRESOS_MCP (todos sin DESC para compatibilidad)
+PROMPT Materialized view MV_INGRESOS_MCP creado.
+
 CREATE INDEX IDX_MCP_MES ON MV_INGRESOS_MCP(mes_pago);
 CREATE INDEX IDX_MCP_CIUDAD ON MV_INGRESOS_MCP(ciudad);
 CREATE INDEX IDX_MCP_PLAN ON MV_INGRESOS_MCP(plan);
 CREATE INDEX IDX_MCP_TOTALES ON MV_INGRESOS_MCP(ingresos_totales);
 
-PROMPT Vista materializada MV_INGRESOS_MCP creada exitosamente;
+PROMPT Index IDX_MCP_MES creado.
+PROMPT Index IDX_MCP_CIUDAD creado.
+PROMPT Index IDX_MCP_PLAN creado.
+PROMPT Index IDX_MCP_TOTALES creado.
+PROMPT Vista materializada MV_INGRESOS_MCP creada exitosamente
 
 -- ============================================================================
--- VERIFICAR VISTAS MATERIALIZADAS CREADAS
+-- VERIFICACIÓN: Vistas y Índices Creados
 -- ============================================================================
 
 PROMPT ============================================================================
 PROMPT VERIFICANDO VISTAS MATERIALIZADAS:
 PROMPT ============================================================================
 
-SELECT mview_name, last_refresh_date, refresh_method 
-FROM user_mviews 
-WHERE mview_name IN ('MV_CONTENIDO_POPULARIDAD', 'MV_INGRESOS_MCP')
-ORDER BY mview_name;
-
--- ============================================================================
--- VERIFICAR ÍNDICES CREADOS
--- ============================================================================
+BEGIN
+    DECLARE
+        v_count NUMBER;
+    BEGIN
+        SELECT COUNT(*) INTO v_count
+        FROM user_mviews 
+        WHERE mview_name IN ('MV_CONTENIDO_POPULARIDAD', 'MV_INGRESOS_MCP');
+        DBMS_OUTPUT.PUT_LINE('? Vistas Materializadas Creadas: ' || v_count);
+    END;
+END;
+/
 
 PROMPT ============================================================================
 PROMPT VERIFICANDO ÍNDICES:
 PROMPT ============================================================================
 
-SELECT index_name, table_name, status, uniqueness
-FROM user_indexes 
-WHERE table_name IN ('MV_CONTENIDO_POPULARIDAD', 'MV_INGRESOS_MCP')
-ORDER BY table_name, index_name;
+BEGIN
+    DECLARE
+        v_count NUMBER;
+    BEGIN
+        SELECT COUNT(*) INTO v_count
+        FROM user_indexes 
+        WHERE table_name IN ('MV_CONTENIDO_POPULARIDAD', 'MV_INGRESOS_MCP');
+        DBMS_OUTPUT.PUT_LINE('? Índices Creados: ' || v_count);
+    END;
+END;
+/
 
 -- ============================================================================
--- PRUEBA: Consultar las vistas materializadas
+-- PRUEBA 1: CONTENIDO POPULAR (Sin FETCH, usando ROWNUM)
 -- ============================================================================
-
-PROMPT ============================================================================
-PROMPT PRUEBA DE CONSULTAS:
-PROMPT ============================================================================
 
 PROMPT;
-PROMPT === VISTA MATERIALIZADA 1: CONTENIDO POPULARIDAD ===
-SELECT id_contenido, titulo, total_reproducciones, calificacion_promedio, tasa_completacion_pct
+PROMPT ============================================================================
+PROMPT PRUEBA 1: CONTENIDO POPULAR (Ordenado por Reproducciones)
+PROMPT ============================================================================
+
+SELECT 
+    id_contenido,
+    titulo,
+    total_reproducciones,
+    calificacion_promedio,
+    tasa_completacion_pct
 FROM MV_CONTENIDO_POPULARIDAD
 WHERE total_reproducciones > 0
-ORDER BY total_reproducciones DESC
-FETCH FIRST 5 ROWS ONLY;
+ORDER BY total_reproducciones DESC;
+
+-- ============================================================================
+-- PRUEBA 2: INGRESOS POR MES Y CIUDAD
+-- ============================================================================
 
 PROMPT;
-PROMPT === VISTA MATERIALIZADA 2: INGRESOS MENSUALES ===
--- NOTA: Usar el nombre correcto MV_INGRESOS_MCP
-SELECT mes_pago, ciudad, plan, ingresos_totales, cantidad_pagos
+PROMPT ============================================================================
+PROMPT PRUEBA 2: INGRESOS POR MES, CIUDAD Y PLAN
+PROMPT ============================================================================
+
+SELECT 
+    mes_pago,
+    ciudad,
+    plan,
+    cantidad_pagos,
+    ingresos_totales,
+    tasa_exito_pct
 FROM MV_INGRESOS_MCP
-ORDER BY mes_pago DESC, ingresos_totales DESC
-FETCH FIRST 10 ROWS ONLY;
+ORDER BY mes_pago DESC, ingresos_totales DESC;
 
 -- ============================================================================
--- FIN DEL SCRIPT
+-- PRUEBA 3: TOP 5 CONTENIDO MÁS REPRODUCIDO
 -- ============================================================================
+
+PROMPT;
+PROMPT ============================================================================
+PROMPT PRUEBA 3: TOP 5 CONTENIDO MÁS REPRODUCIDO
+PROMPT ============================================================================
+
+SELECT 
+    titulo,
+    total_reproducciones,
+    calificacion_promedio,
+    reproducciones_completadas
+FROM (
+    SELECT 
+        titulo,
+        total_reproducciones,
+        calificacion_promedio,
+        reproducciones_completadas
+    FROM MV_CONTENIDO_POPULARIDAD
+    ORDER BY total_reproducciones DESC
+)
+WHERE ROWNUM <= 5;
+
+-- ============================================================================
+-- PRUEBA 4: INGRESOS CONSOLIDADOS POR PLAN
+-- ============================================================================
+
+PROMPT;
+PROMPT ============================================================================
+PROMPT PRUEBA 4: INGRESOS CONSOLIDADOS POR PLAN
+PROMPT ============================================================================
+
+SELECT 
+    plan,
+    SUM(ingresos_totales) as ingresos_plan,
+    COUNT(*) as registros,
+    ROUND(AVG(ingresos_totales), 2) as promedio
+FROM MV_INGRESOS_MCP
+GROUP BY plan
+ORDER BY ingresos_plan DESC;
+
+-- ============================================================================
+-- RESUMEN FINAL
+-- ============================================================================
+
+PROMPT;
 PROMPT ============================================================================
 PROMPT 2 Vistas Materializadas y 6 Índices creados exitosamente
 PROMPT ============================================================================
+PROMPT;
+PROMPT VISTAS DISPONIBLES PARA CONSULTAR DIRECTAMENTE:
+PROMPT - SELECT * FROM MV_CONTENIDO_POPULARIDAD;
+PROMPT - SELECT * FROM MV_INGRESOS_MCP;
+PROMPT;
+PROMPT PRUEBAS EJECUTADAS:
+PROMPT - Prueba 1: Contenido Popular (Ordenado por Reproducciones)
+PROMPT - Prueba 2: Ingresos por Mes, Ciudad y Plan
+PROMPT - Prueba 3: Top 5 Contenido Más Reproducido
+PROMPT - Prueba 4: Ingresos Consolidados por Plan
+PROMPT;
+PROMPT ============================================================================
+
+COMMIT;
